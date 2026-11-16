@@ -1,0 +1,9 @@
+node_modules/
+dist/
+# Daten aus lokalen Testläufen
+data.json
+ableset-meta.json
+projects.json
+app-settings.json
+*.tmp
+.DS_Store

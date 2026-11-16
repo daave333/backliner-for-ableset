@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36">
+  <defs>
+    <mask id="m">
+      <rect width="36" height="36" fill="#fff"/>
+      <circle cx="11.6" cy="12.6" r="1.9" fill="#000"/>
+      <rect x="15" y="10.8" width="11.4" height="3.6" rx="1.8" fill="#000"/>
+      <rect x="10.4" y="17.6" width="15" height="3.2" rx="1.6" fill="#000"/>
+      <rect x="13.6" y="24" width="8.8" height="3.2" rx="1.6" fill="#000"/>
+    </mask>
+  </defs>
+  <!-- Plektrum-Silhouette, schwarz = Vorlage, macOS färbt hell/dunkel selbst -->
+  <path d="M18 3 C26.5 3 32 5 32 10.8 C32 18.8 23.6 29 18 33.5 C12.4 29 4 18.8 4 10.8 C4 5 9.5 3 18 3 Z" fill="#000" mask="url(#m)"/>
+</svg>

@@ -1,0 +1,54 @@
+{
+  "name": "backliner-for-ableset",
+  "productName": "Backliner for AbleSet",
+  "version": "1.6.0",
+  "description": "Setlisten-Ansicht für Backliner, gekoppelt an AbleSet",
+  "main": "main.js",
+  "scripts": {
+    "server": "node server.js",
+    "start": "electron .",
+    "dist": "electron-builder --mac --universal --publish never"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "node-osc": "^11.0.0",
+    "qrcode": "^1.5.4",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "de.event2me.backliner",
+    "productName": "Backliner for AbleSet",
+    "mac": {
+      "category": "public.app-category.music",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "identity": "-",
+      "icon": "build/icon.png",
+      "extendInfo": {
+        "LSUIElement": true
+      }
+    },
+    "dmg": {
+      "title": "Backliner for AbleSet"
+    },
+    "files": [
+      "main.js",
+      "server.js",
+      "updater.js",
+      "public/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "artifactName": "Backliner-for-AbleSet-${version}-${arch}.${ext}"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/daave333/backliner-for-ableset.git"
+  }
+}

@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Backliner">
+<meta name="theme-color" content="#0d0d0f">
+<title>Backliner for AbleSet</title>
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="favicon.png">
+<style>
+:root{--fs:18px;--accent:#3ad37a;--bg:#0d0d0f;--panel:#17171b;--panel2:#202026;--line:#2e2e36;--text:#ececf0;--dim:#8a8a96;--warn:#e0a020;--alert:#e5383b}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font:var(--fs)/1.35 -apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif;-webkit-text-size-adjust:100%}
+body.s{--fs:15px} body.l{--fs:24px}
+body{padding-bottom:5em}
+header{position:sticky;top:0;z-index:5;display:flex;gap:.4em;padding:.5em .75em;padding-top:max(.5em,env(safe-area-inset-top));background:var(--panel);border-bottom:2px solid var(--accent);align-items:center;flex-wrap:wrap}
+header .brand{color:var(--accent);font-weight:700;margin-right:auto;white-space:nowrap}
+header .dot{display:inline-block;width:.6em;height:.6em;border-radius:50%;background:var(--alert);margin-right:.35em;vertical-align:middle}
+header .dot.on{background:var(--accent)}
+button,select,input{font:inherit;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:.35em .7em}
+button{cursor:pointer;-webkit-tap-highlight-color:transparent}
+button.on,button:active{border-color:var(--accent);color:var(--accent)}
+button.primary{background:var(--accent);color:#06140b;border-color:var(--accent);font-weight:600}
+button.danger{color:var(--alert)}
+input[type=color]{padding:0;width:2.2em;height:2em;vertical-align:middle}
+.label{color:var(--dim);font-size:.8em}
+#changed{display:none;background:#5a3a00;border-bottom:1px solid var(--warn);padding:.5em .75em}
+#offline{display:none;background:#4a1012;padding:.5em .75em}
+#projSetup{display:none;background:#0f2a1b;border-bottom:1px solid var(--accent);padding:.6em .75em}
+.path{font-family:ui-monospace,Menlo,monospace;font-size:.8em;color:var(--dim);word-break:break-all;margin-top:.4em}
+.panel{display:none}.panel.on{display:block}
+#now{display:flex;align-items:flex-end;justify-content:space-between;gap:1em;padding:.75em 1em;border-bottom:1px solid var(--line)}
+#now h1{margin:0;font-size:1.9em;line-height:1.1}
+#time{font-size:3em;font-weight:700;font-variant-numeric:tabular-nums;color:var(--accent);line-height:1}
+#time.paused{color:var(--dim)}
+#cols{display:grid;gap:.75em;padding:.75em;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+body.portrait #cols{grid-template-columns:1fr}
+.col{background:var(--panel);border-radius:12px;padding:.75em;border:1px solid var(--line)}
+.col h2{margin:0 0 .5em;font-size:1.25em}
+.col.go{border-color:var(--alert);box-shadow:0 0 0 2px var(--alert)}
+.col.prep{border-color:var(--warn)}
+.slot{border-left:10px solid #555;padding:.45em .7em;margin:.4em 0;border-radius:6px;background:var(--panel2)}
+.slot b{font-size:1.15em}
+.slot.change{outline:2px solid var(--warn)}
+.same{color:var(--accent);padding:.3em 0}
+.upcoming{margin-top:.5em;font-size:.85em;color:var(--dim)}
+#banner{display:none;position:fixed;left:0;right:0;bottom:0;z-index:6;padding:.9em 1em;padding-bottom:max(.9em,env(safe-area-inset-bottom));font-size:1.4em;font-weight:700;text-align:center}
+#banner.prep{display:block;background:var(--warn);color:#1a1000}
+#banner.go{display:block;background:var(--alert);color:#fff;animation:blink 1s infinite}
+@keyframes blink{50%{opacity:.45}}
+.wrap{padding:1em;max-width:1400px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:1em;margin-bottom:1em}
+.row{display:flex;gap:.5em;align-items:center;flex-wrap:wrap;margin:.35em 0}
+.musician-check{display:flex;gap:.6em;align-items:center;padding:.5em 0;font-size:1.1em}
+.musician-check input{width:1.4em;height:1.4em}
+.seg button{border-radius:0;margin-left:-1px}.seg button:first-child{border-radius:8px 0 0 8px}.seg button:last-child{border-radius:0 8px 8px 0}
+.song-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:.75em;margin-bottom:.75em}
+.song-card h3{margin:0 0 .4em;display:flex;justify-content:space-between;gap:1em;flex-wrap:wrap;align-items:center}
+.song-card h3 .changed{color:var(--warn);font-size:.8em}
+.assign-grid{display:grid;gap:.6em;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+.assign{background:var(--panel2);border-radius:8px;padding:.55em;border-left:6px solid #555}
+.assign input[type=text]{width:10em}
+.assign .note{width:100%;margin-top:.3em}
+.empty{color:var(--dim);padding:1em}
+/* Listenansicht */
+#live #now{position:sticky;z-index:4;background:var(--bg)}
+#list{padding:.5em .75em 75vh}
+.lrow{border-radius:10px;margin:.4em 0;transition:opacity .3s}
+.lrow.song{background:var(--panel);border:1px solid var(--line);padding:.55em .75em}
+.lrow.song.past{opacity:.38}
+.lrow.song.current{border:2px solid var(--accent);box-shadow:0 0 0 3px rgba(58,211,122,.15)}
+.lhead{display:flex;align-items:baseline;gap:.6em}
+.lhead .num{color:var(--dim);font-variant-numeric:tabular-nums;min-width:1.6em}
+.lhead .name{font-weight:700;font-size:1.2em;flex:1}
+.lhead .rowtime{color:var(--accent);font-weight:700;font-variant-numeric:tabular-nums;font-size:1.2em}
+.lgear{display:grid;gap:.35em;margin-top:.4em;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+body.portrait .lgear{grid-template-columns:1fr}
+.chip{background:var(--panel2);border-left:8px solid #555;border-radius:6px;padding:.3em .6em}
+.chip .who,.evline .who{color:var(--dim);font-size:.8em;margin-right:.3em}
+.chip .note{font-size:.9em;margin-top:.15em}
+.lrow.event{margin-left:1.2em;padding:.45em .75em;border:1px dashed var(--warn);background:rgba(224,160,32,.08)}
+.lrow.event .evhead{font-weight:700;color:var(--warn)}
+.lrow.event.done{opacity:.3;border-color:var(--line);background:none}
+.lrow.event.done .evhead{color:var(--dim)}
+.lrow.event.prep{border-style:solid;background:rgba(224,160,32,.18)}
+.lrow.event.go{border:2px solid var(--alert);background:rgba(229,56,59,.22);animation:blink 1s infinite}
+.lrow.event.go .evhead{color:#ff6b6e}
+.lrow.heading{margin:1.1em 0 .3em;padding:.2em .2em .25em;font-size:.85em;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);border-bottom:1px solid var(--accent)}
+.lrow.anote{margin-left:1.2em;padding:.35em .75em;background:rgba(120,140,255,.10);border:1px solid rgba(120,140,255,.35);color:#c8d0ff}
+.lrow.heading.done,.lrow.anote.done{opacity:.35}
+.lhead + .desc{color:var(--dim);font-size:.9em;margin:.1em 0 0 2.2em}
+#backBtn{display:none;position:fixed;left:50%;transform:translateX(-50%);z-index:7;background:var(--accent);color:#06140b;border:none;font-weight:700;padding:.6em 1.2em;border-radius:999px;box-shadow:0 4px 18px rgba(0,0,0,.5)}
+#print{display:none}
+@media print{
+  header,#banner,#changed,#offline,.panel{display:none!important}
+  html,body{background:#fff;color:#000;font-size:11pt;padding:0}
+  #print{display:block!important}
+  #print table{border-collapse:collapse;width:100%}
+  #print th,#print td{border:1px solid #999;padding:4px 6px;text-align:left;vertical-align:top}
+  #print .chg{font-weight:700}
+  #print .sw{display:inline-block;width:10px;height:10px;border:1px solid #000;margin-right:4px;vertical-align:middle}
+}
+</style>
+</head>
+<body>
+<header>
+  <span class="brand"><span id="dot" class="dot"></span>Backliner for AbleSet</span>
+  <button data-tab="live" class="on">Live</button>
+  <button data-tab="settings">Einstellungen</button>
+  <button data-tab="editor">Editor</button>
+  <button id="printBtn">Drucken</button>
+</header>
+<div id="offline">Keine Verbindung zum Server – verbinde neu …</div>
+<div id="changed">⚠️ Setlist geändert – Wechsel prüfen bei: <b id="changedList"></b> <button id="ackBtn">Erledigt</button></div>
+<div id="projSetup"></div>
+
+<main>
+  <section id="live" class="panel on">
+    <div id="now">
+      <div><div class="label" id="nowLabel">Jetzt</div><h1 id="song">–</h1></div>
+      <div id="time">–:––</div>
+    </div>
+    <div id="cols"></div>
+    <div id="list"></div>
+  </section>
+  <section id="settings" class="panel"><div class="wrap" id="settingsBody"></div></section>
+  <section id="editor" class="panel"><div class="wrap" id="editorBody"></div></section>
+</main>
+<div id="print"></div>
+<div id="banner"></div>
+<button id="backBtn"></button>
+<script src="app.js"></script>
+<script src="list.js"></script>
+<script>
+  // Zeitleiste klebt direkt unter der Kopfzeile
+  function stickNow() { document.getElementById('now').style.top = document.querySelector('header').offsetHeight + 'px'; }
+  window.addEventListener('resize', stickNow); stickNow();
+</script>
+</body>
+</html>

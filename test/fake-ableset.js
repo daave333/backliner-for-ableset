@@ -28,7 +28,7 @@ function sendSongInfo() {
 }
 // Projektname wie in Ableton: node test/fake-ableset.js --project "Mein Set"
 const argAfter = flag => { const i = process.argv.indexOf(flag); return i > 0 ? process.argv[i + 1] : null; };
-let projectName = argAfter('--project') || 'Tream Tour 2026';
+let projectName = argAfter('--project') || 'Mira Kolibri Live';
 // Projektwechsel testen: --switch-to "Anderes Set" (nach 20 Sekunden)
 if (argAfter('--switch-to')) setTimeout(() => {
   projectName = argAfter('--switch-to');

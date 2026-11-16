@@ -4,6 +4,10 @@ Setlisten-Ansicht für Backliner und Guitar Techs auf dem iPad – live gekoppel
 
 Die App läuft als kleines Menüleisten-Programm auf dem Show-Mac, holt sich den Status von AbleSet per OSC und zeigt auf jedem iPad im Browser, wer bei welchem Song welche Gitarre mit welchem Tuning und Capo spielt – mit Hinweisen, wann ein Wechsel vorbereitet und wann angereicht werden muss.
 
+**📖 [Anleitung für die Crew](docs/ANLEITUNG.md)** – Einrichtung, iPads verbinden, Editor, Live-Betrieb, Updates und Lösungen für typische Probleme.
+
+![Live-Liste auf dem iPad](docs/img/live-liste.png)
+
 ## Download
 
 Die neueste Version gibt es unter **[Releases](../../releases/latest)**:

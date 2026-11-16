@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   mac:
-    runs-on: macos-latest
+    runs-on: macos-15-intel   # Intel-Server: weniger ausgelastet, die App wird trotzdem universal (Intel + Apple-Chip)
     steps:
       - uses: actions/checkout@v4
 

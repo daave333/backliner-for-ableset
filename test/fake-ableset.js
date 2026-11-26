@@ -10,6 +10,23 @@ const parts = songs.map((_, i) => i < 5 ? 'Hauptset' : 'Zugabenblock');
 const descriptions = songs.map((s, i) => i === 2 ? 'Akustik-Intro, Licht runter' : '');
 const notes = { 0: ['Einlass-Musik aus'], 3: ['Ansage Band'], 5: ['Abgang & Zugaberufe'] }; // Notiz VOR Song i
 const endNotes = ['Ende – Licht an'];
+// Abschnitte (Locators) pro Song, gleichmäßig über die Songlänge verteilt
+const sectionsOf = i => i === 3 ? ['Intro', 'Strophe', 'Refrain', 'Bridge', 'Outro'] : ['Intro', 'Strophe', 'Refrain', 'Outro'];
+function sectionState() {
+  const secs = sectionsOf(idx), len = durations[idx] / secs.length, elapsed = durations[idx] - remaining;
+  const si = Math.min(secs.length - 1, Math.floor(elapsed / len));
+  return { secs, si, rem: (si + 1) * len - elapsed };
+}
+let lastSection = -1;
+function sendSection(force) {
+  const { secs, si, rem } = sectionState();
+  if (force || si !== lastSection) {
+    lastSection = si;
+    client.send('/setlist/activeSectionIndex', si, () => {});
+    client.send('/setlist/nextSectionIndex', si + 1 < secs.length ? si + 1 : -1, () => {});
+  }
+  client.send('/setlist/remainingTimeInSection', rem, () => {});
+}
 
 const server = new Server(39051, '0.0.0.0');
 server.on('message', ([addr, ...args]) => {
@@ -25,6 +42,8 @@ function sendSongInfo() {
   client.send('/setlist/activePartName', parts[idx], () => {});
   client.send('/setlist/notesBeforeActiveSong', ...before, () => {});
   client.send('/setlist/notesAfterActiveSong', ...after, () => {});
+  client.send('/setlist/sections', ...sectionsOf(idx), () => {});
+  sendSection(true);
 }
 // Projektname wie in Ableton: node test/fake-ableset.js --project "Mein Set"
 const argAfter = flag => { const i = process.argv.indexOf(flag); return i > 0 ? process.argv[i + 1] : null; };
@@ -51,7 +70,11 @@ setInterval(() => {
   remaining -= 1;
   if (remaining < 0) { idx = (idx + 1) % songs.length; remaining = durations[idx]; client.send('/setlist/activeSongIndex', idx, () => {}); sendSongInfo(); }
   client.send('/setlist/remainingTimeInSong', remaining, () => {});
+  sendSection();
 }, 1000);
+
+// Bei einem bestimmten Song starten: node test/fake-ableset.js --start 3
+if (argAfter('--start')) { idx = Number(argAfter('--start')); remaining = durations[idx]; }
 
 // Schneller Durchlauf zum Testen: node test/fake-ableset.js --fast (1 Song = 4 Sekunden)
 if (process.argv.includes('--fast')) durations.fill(4), remaining = 4;

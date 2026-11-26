@@ -60,9 +60,9 @@ function renderList() {
       // Wechsel-Event vor diesem Song
       if (j > 0) {
         const prev = setlist[j - 1];
-        const lines = mine.filter(m => isChange(assignOf(prev, m.id), assignOf(song, m.id))).map(m => {
-          const from = instOf(m, assignOf(prev, m.id).inst);
-          return `<div class="evline"><span class="who">${esc(m.name)}</span> ${esc(from?.name || '—')} → ${shortGear(m, assignOf(song, m.id))}</div>`;
+        const lines = mine.filter(m => isChange(endOf(prev, m.id), startOf(song, m.id))).map(m => {
+          const from = instOf(m, endOf(prev, m.id).inst);
+          return `<div class="evline"><span class="who">${esc(m.name)}</span> ${esc(from?.name || '—')} → ${shortGear(m, startOf(song, m.id))}</div>`;
         });
         if (lines.length) {
           const st = eventState(j, song);
@@ -73,15 +73,25 @@ function renderList() {
       // Songzeile
       const state = j < activeIndex ? 'past' : j === activeIndex ? 'current' : 'future';
       const chips = mine.map(m => {
-        const a = assignOf(song, m.id), i = instOf(m, a.inst), b = instOf(m, a.backup);
-        const notes = (a.notes || []).filter(n => norm(n)).map(n => `<div class="note">📝 ${esc(n)}</div>`).join('');
+        // beim laufenden Song die Ausstattung des aktuellen Abschnitts zeigen
+        const base = assignOf(song, m.id), a = j === activeIndex ? nowOf(song, m.id) : base;
+        const i = instOf(m, a.inst), b = instOf(m, base.backup);
+        const notes = (base.notes || []).filter(n => norm(n)).map(n => `<div class="note">📝 ${esc(n)}</div>`).join('');
         return `<div class="chip" style="border-color:${esc(i?.color || '#555')}"><span class="who">${esc(m.name)}</span> ${shortGear(m, a)}${b ? ` <span class="label">· Backup ${esc(b.name)}</span>` : ''}${notes}</div>`;
+      }).join('');
+      // Wechsel innerhalb des Songs, nach Abschnitt sortiert
+      const inSong = mine.flatMap(m => realChanges(song, m.id).map(x => ({ m, ...x }))).sort((x, y) => x.c.at - y.c.at).map(({ m, c, from }) => {
+        const st = inSongState(j, song, c);
+        const label = st === 'go' ? 'JETZT WECHSELN' : st === 'prep' ? 'Im Song' : 'Im Song';
+        return `<div class="insong ${st}"><span class="evhead">⇄ ${label} ab „${esc(secName(song, c))}“</span>
+          <span class="who">${esc(m.name)}</span> ${esc(instOf(m, from.inst)?.name || '—')} → ${shortGear(m, c)}</div>`;
       }).join('');
       const desc = norm(S.live.descriptions?.[j]);
       out += `<div class="lrow song ${state}" data-idx="${j}">
         <div class="lhead"><span class="num">${j + 1}</span><span class="name">${esc(song)}</span>${state === 'current' ? '<span class="rowtime" id="rowTime"></span>' : ''}</div>
         ${desc ? `<div class="desc">${esc(desc)}</div>` : ''}
         <div class="lgear">${chips}</div>
+        ${inSong}
       </div>`;
       return out;
     }).join('');

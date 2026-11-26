@@ -86,12 +86,20 @@ Die Songs kommen automatisch aus AbleSet, in der Reihenfolge der Setlist. Pro So
 | Feld | Beispiel | Hinweis |
 | --- | --- | --- |
 | Instrument | Les Paul | Auswahl aus den angelegten Instrumenten |
-| Tuning | Drop D | Freitext mit Vorschlägen (Standard, Eb, Drop D, DADGAD …) |
+| Tuning | Drop D | Auswahlliste (Standard, Eb, Drop D, DADGAD …), eigene Tunings über „✎ Eigenes Tuning …“ |
 | Capo | 3 | 1 bis 12, leer = kein Capo |
 | Backup | Strat weiß | Ersatz, falls eine Saite reißt |
 | Notizfelder | Übergabe am Steg | Beliebig viele über **+ Notizfeld** |
 
 Ein **Wechsel** entsteht automatisch, sobald sich Instrument, Tuning oder Capo gegenüber dem vorherigen Song ändern. Du musst Wechsel also nicht selbst markieren.
+
+**Wechsel im Song**
+
+Spielt jemand innerhalb eines Songs ein zweites Instrument (z. B. Strat bis zum Refrain, ab der Bridge Les Paul), tippst du beim Musiker auf **+ Wechsel im Song**. Dann wählst du den Abschnitt, ab dem gewechselt wird, und Instrument, Tuning und Capo dafür. Es können mehrere Wechsel pro Song sein.
+
+Die Abschnitte kommen aus AbleSet (die Locators im Song). AbleSet meldet sie nur für den gerade aktiven Song – Backliner merkt sie sich, sobald ein Song einmal aktiv war. Darum beim Soundcheck einmal durch die Setlist klicken; vorher ist der Knopf ausgegraut.
+
+Im Song gibt es dieselben Hinweise wie zwischen Songs: **gelb**, solange der Wechsel im laufenden Song noch aussteht, **rot** mit Countdown, wenn der Abschnitt davor gleich endet (gleiche Sekunden-Einstellung wie bei Songs).
 
 **Eigene Zeiten pro Song**
 
@@ -115,8 +123,9 @@ Im Tab **Live** steht oben der aktuelle Song mit der Restzeit, darunter die ganz
 | Überschrift | grüne Großbuchstaben mit Linie, z. B. ZUGABENBLOCK | Abschnitt aus der AbleSet-Setlist |
 | Notiz | bläuliche Zeile mit 🗒, z. B. „Ansage Band“ | Notiz aus der AbleSet-Setlist |
 | Wechsel | gestrichelt eingerückt: „⇄ Wechsel vor …“ | Hier wechselt jemand Instrument, Tuning oder Capo |
+| Wechsel im Song | in der Songkarte: „⇄ Im Song ab ‚Bridge‘ …“ | Wechsel an einem AbleSet-Abschnitt innerhalb des Songs |
 | Vorbereiten | gelb hinterlegt | Wechsel steht in Kürze an, Instrument bereitlegen |
-| JETZT WECHSELN | rot, blinkend | Song endet gleich, auf die Bühne und anreichen |
+| JETZT WECHSELN | rot, blinkend | Song bzw. Abschnitt endet gleich, auf die Bühne und anreichen |
 | Gespielt | ausgegraut | Liegt schon hinter euch |
 
 Unten erscheint zusätzlich ein Balken: **gelb** zum Vorbereiten, **rot blinkend** mit Sekunden-Countdown zum Wechseln. Die Hinweise verschwinden von selbst, quittieren musst du nichts.

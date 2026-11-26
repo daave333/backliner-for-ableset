@@ -23,6 +23,7 @@ Beim ersten Start: Rechtsklick auf die App → **Öffnen**, weil sie nicht von A
 - **Hinweise** pro Backliner einstellbar: „Vorbereiten“ X Songs vorher, „Gleich geht’s los“ X Sekunden vor Songende – pro Song überschreibbar.
 - **Bis zu 4 iPads**, jedes betreut frei wählbare Musiker (z. B. als Vertretung).
 - **Editor** für Musiker, Instrumente (Name + Farbe), Tuning, Capo, Backup-Gitarre und beliebig viele Notizfelder.
+- **Wechsel im Song** an AbleSet-Abschnitten (z. B. ab der Bridge Les Paul) – mit eigenen Hinweisen und Countdown.
 - **Setlist-Änderungen** aus AbleSet werden übernommen und markiert, damit Wechsel geprüft werden können.
 - **Daten im Ableton-Projektordner** (`Backliner/backliner.json`, mit Backups) – wie bei AbleSet.
 - **Menüleisten-Symbol** mit Status, Restzeit, QR-Code für die iPads, Projektordner und Update-Button.

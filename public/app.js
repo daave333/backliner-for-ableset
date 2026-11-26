@@ -2,7 +2,7 @@
 'use strict';
 
 // ---------- Zustand ----------
-let S = { live: { connected: false, setlist: [], activeIndex: -1, remaining: null, playing: false, changed: [], descriptions: [], part: '', notesBefore: [], notesAfter: [] }, data: null, meta: {} };
+let S = { live: { connected: false, setlist: [], activeIndex: -1, remaining: null, playing: false, changed: [], descriptions: [], part: '', notesBefore: [], notesAfter: [], sections: [], sectionIndex: -1, nextSectionIndex: -1, sectionRemaining: null }, data: null, meta: {} };
 let tab = 'live';
 let editSongs = [];           // Songliste, die der Editor gerade zeigt (Index → Name)
 
@@ -35,12 +35,56 @@ function ensureAssign(song, mid) {
   const a = songData(song).assign;
   if (!a[mid]) a[mid] = { notes: [] };
   a[mid].notes ||= [];
+  a[mid].changes ||= [];
   return a[mid];
 }
 const instOf = (m, id) => id ? m.instruments.find(i => i.id === id) : null;
 const norm = v => String(v ?? '').trim();
+// Leeres Tuning heißt Standard – „Standard“ und „“ sind also kein Wechsel
+const normTuning = v => norm(v).toLowerCase() || 'standard';
 function isChange(a, b) {
-  return norm(a.inst) !== norm(b.inst) || norm(a.tuning) !== norm(b.tuning) || norm(a.capo) !== norm(b.capo);
+  return norm(a.inst) !== norm(b.inst) || normTuning(a.tuning) !== normTuning(b.tuning) || norm(a.capo) !== norm(b.capo);
+}
+
+// ---------- Wechsel innerhalb eines Songs (an AbleSet-Abschnitten) ----------
+// Ablauf eines Musikers in einem Song: Ausstattung zu Songbeginn, dann Wechsel ab Abschnitt „at“
+function segmentsOf(song, mid) {
+  const a = assignOf(song, mid);
+  const chg = (a.changes || []).filter(c => c && Number.isFinite(+c.at) && +c.at > 0).sort((x, y) => x.at - y.at);
+  return [a, ...chg];
+}
+const startOf = (song, mid) => assignOf(song, mid);
+const endOf = (song, mid) => { const s = segmentsOf(song, mid); return s[s.length - 1]; };
+// Abschnitte eines Songs: beim aktuellen Song live von AbleSet, sonst das Gelernte
+function sectionsFor(song) {
+  if (song != null && song === S.live.setlist?.[S.live.activeIndex] && S.live.sections?.length) return S.live.sections;
+  return (S.meta && S.meta[song]?.sections) || [];
+}
+const secName = (song, c) => norm(sectionsFor(song)[c.at]) || norm(c.name) || `Abschnitt ${+c.at + 1}`;
+// Ausstattung gerade jetzt (beim aktuellen Song abhängig vom Abschnitt)
+function nowOf(song, mid) {
+  const segs = segmentsOf(song, mid);
+  if (song !== S.live.setlist?.[S.live.activeIndex]) return segs[0];
+  const si = S.live.sectionIndex ?? -1;
+  return segs.filter((c, i) => i === 0 || c.at <= si).pop();
+}
+// Status eines Wechsels im Song: done | go | prep | '' (j = Position des Songs in der Setlist)
+function inSongState(j, song, c) {
+  const { activeIndex, sectionIndex, nextSectionIndex, sectionRemaining } = S.live;
+  if (j < activeIndex) return 'done';
+  if (j > activeIndex) return '';
+  if (c.at <= sectionIndex) return 'done';
+  if (c.at === nextSectionIndex && sectionRemaining != null && sectionRemaining <= timing(song).go) return 'go';
+  return 'prep';
+}
+// Noch ausstehende Wechsel im aktuellen Song
+function pendingInSong(song, j, m) {
+  return realChanges(song, m.id).map(({ c }) => ({ c, st: inSongState(j, song, c) })).filter(x => x.st === 'go' || x.st === 'prep');
+}
+// Nur Wechsel, bei denen sich wirklich etwas ändert (mit der vorherigen Ausstattung)
+function realChanges(song, mid) {
+  const segs = segmentsOf(song, mid);
+  return segs.slice(1).map((c, k) => ({ c, from: segs[k] })).filter(x => isChange(x.from, x.c));
 }
 function timing(song) {
   const o = (song != null && P().songs[song]?.override) || {};
@@ -119,14 +163,20 @@ function renderProjectSetup() {
     <div class="label">Gespeichert wird danach im Projektordner: ${esc(pr.folder)}/Backliner</div>`;
 }
 
-function slotHtml(m, song, title, highlight) {
+function slotHtml(m, song, title, highlight, state) {
   if (song == null) return '';
-  const a = assignOf(song, m.id), i = instOf(m, a.inst), b = instOf(m, a.backup);
+  const a = state || assignOf(song, m.id), base = assignOf(song, m.id), i = instOf(m, a.inst), b = instOf(m, base.backup);
+  const j = S.live.setlist.indexOf(song);
+  const inSong = realChanges(song, m.id).map(({ c }) => {
+    const st = inSongState(j, song, c);
+    return `<div class="insong ${st}">⇄ ab „${esc(secName(song, c))}“: ${esc(describe(m, c))}</div>`;
+  }).join('');
   return `<div class="slot${highlight ? ' change' : ''}" style="border-color:${esc(i?.color || '#555')}">
     <div class="label">${esc(title)} · ${esc(song)}</div>
     <b>${esc(i?.name || '—')}</b> · ${esc(a.tuning || 'Standard')} · Capo ${esc(a.capo || '–')}
     ${b ? `<div class="label">Backup: ${esc(b.name)}</div>` : ''}
-    ${(a.notes || []).filter(n => norm(n)).map(n => `<div>📝 ${esc(n)}</div>`).join('')}
+    ${(base.notes || []).filter(n => norm(n)).map(n => `<div>📝 ${esc(n)}</div>`).join('')}
+    ${inSong}
   </div>`;
 }
 
@@ -144,31 +194,45 @@ function renderLive() {
 
   $('cols').innerHTML = mine.map(m => {
     let level = '';
-    // 1) Wechsel zum nächsten Song steht unmittelbar bevor
-    const nextChange = next != null && isChange(assignOf(cur, m.id), assignOf(next, m.id));
-    if (nextChange && remaining != null && remaining <= timing(next).go) {
+    // 1) Wechsel im laufenden Song (an einem AbleSet-Abschnitt)
+    const pend = cur != null ? pendingInSong(cur, activeIndex, m) : [];
+    const goIn = pend.find(x => x.st === 'go');
+    if (goIn) {
+      level = 'go';
+      const r = S.live.sectionRemaining;
+      const when = (!playing || r <= 0.5) ? 'JETZT' : `in ${Math.ceil(r)} s`;
+      alerts.go.push(`${m.name}: Wechsel ${when} (ab „${secName(cur, goIn.c)}“) → ${describe(m, goIn.c)}`);
+    }
+    // 2) Wechsel zum nächsten Song steht unmittelbar bevor
+    const nextChange = next != null && isChange(endOf(cur, m.id), startOf(next, m.id));
+    if (!level && !pend.length && nextChange && remaining != null && remaining <= timing(next).go) {
       level = 'go';
       const when = (!playing || remaining <= 0.5) ? 'JETZT' : `in ${Math.ceil(remaining)} s`;
-      alerts.go.push(`${m.name}: Wechsel ${when} → ${describe(m, assignOf(next, m.id))}`);
+      alerts.go.push(`${m.name}: Wechsel ${when} → ${describe(m, startOf(next, m.id))}`);
     }
-    // 2) Wechsel in den nächsten Songs vorbereiten (Vorlauf pro Song überschreibbar)
+    // 3) Wechsel im laufenden Song vorbereiten
+    if (!level && pend.length) {
+      level = 'prep';
+      alerts.prep.push(`${m.name}: im Song ab „${secName(cur, pend[0].c)}“ → ${describe(m, pend[0].c)}`);
+    }
+    // 4) Wechsel in den nächsten Songs vorbereiten (Vorlauf pro Song überschreibbar)
     const upcoming = [];
     for (let k = 1; activeIndex + k < setlist.length && k <= 10; k++) {
       const from = setlist[activeIndex + k - 1], to = setlist[activeIndex + k];
       if (activeIndex + k - 1 < 0) continue;
-      if (isChange(assignOf(from, m.id), assignOf(to, m.id))) {
+      if (isChange(endOf(from, m.id), startOf(to, m.id))) {
         if (k <= timing(to).prep) upcoming.push({ k, to });
       }
     }
     if (!level && upcoming.length) {
       level = 'prep';
       const u = upcoming[0];
-      alerts.prep.push(`${m.name}: vorbereiten für „${u.to}“ → ${describe(m, assignOf(u.to, m.id))}`);
+      alerts.prep.push(`${m.name}: vorbereiten für „${u.to}“ → ${describe(m, startOf(u.to, m.id))}`);
     }
     const later = upcoming.filter(u => u.k > 1);
     return `<div class="col ${level}">
       <h2>${esc(m.name)}</h2>
-      ${cur != null ? slotHtml(m, cur, 'Jetzt') : ''}
+      ${cur != null ? slotHtml(m, cur, 'Jetzt', false, nowOf(cur, m.id)) : ''}
       ${next != null ? (nextChange ? slotHtml(m, next, 'Danach – WECHSEL', true) : `<div class="same">✔ bleibt bei „${esc(next)}“</div>`) : ''}
       ${cur == null && setlist.length ? slotHtml(m, setlist[0], 'Erster Song') : ''}
       ${later.length ? `<div class="upcoming">Weitere Wechsel: ${later.map(u => `${esc(u.to)} (in ${u.k} Songs)`).join(', ')}</div>` : ''}
@@ -284,6 +348,15 @@ function renderSettings() {
   </div>`;
 }
 
+// Tuning als Auswahlliste (auf dem iPad zuverlässiger als ein Textfeld mit Vorschlägen), eigene Werte per Eingabe
+function tuningSelect(f, val, attrs) {
+  const v = norm(val), known = TUNINGS.some(t => t.toLowerCase() === v.toLowerCase());
+  return `<select data-f="${f}" ${attrs} class="tuning">
+    ${TUNINGS.map(t => `<option ${(t === 'Standard' ? !v || v.toLowerCase() === 'standard' : t.toLowerCase() === v.toLowerCase()) ? 'selected' : ''}>${esc(t)}</option>`).join('')}
+    ${v && !known ? `<option selected>${esc(v)}</option>` : ''}
+    <option value="__custom">✎ Eigenes Tuning …</option></select>`;
+}
+
 // ---------- Editor (gilt für alle) ----------
 function renderEditor() {
   if (!S.data) return;
@@ -293,8 +366,7 @@ function renderEditor() {
   editSongs = [...new Set([...live, ...extra])];
   const changed = new Set(S.live.changed || []);
 
-  let h = `<datalist id="tunings">${TUNINGS.map(t => `<option value="${esc(t)}">`).join('')}</datalist>`;
-  h += `<div class="card"><h2>Musiker & Instrumente</h2><div class="assign-grid">`;
+  let h = `<div class="card"><h2>Musiker & Instrumente</h2><div class="assign-grid">`;
   h += p.musicians.map((m, mi) => `<div class="assign">
       <div class="row"><input type="text" style="width:auto;flex:1" data-f="mName" data-mi="${mi}" value="${esc(m.name)}" placeholder="Name">
         <button class="danger" data-act="delMusician" data-mi="${mi}">✕</button></div>
@@ -326,17 +398,33 @@ function renderEditor() {
         const a = sd.assign?.[m.id] || {};
         const i = instOf(m, a.inst);
         const opts = sel => `<option value="">—</option>` + m.instruments.map(x => `<option value="${x.id}" ${x.id === sel ? 'selected' : ''}>${esc(x.name)}</option>`).join('');
-        const capo = `<option value="">–</option>` + Array.from({ length: 12 }, (_, n) => `<option ${String(n + 1) === String(a.capo) ? 'selected' : ''}>${n + 1}</option>`).join('');
+        const capo = v => `<option value="">–</option>` + Array.from({ length: 12 }, (_, n) => `<option ${String(n + 1) === String(v) ? 'selected' : ''}>${n + 1}</option>`).join('');
         const d = `data-si="${si}" data-mid="${m.id}"`;
+        const secs = sectionsFor(s);
+        const secOpts = at => {
+          const o = secs.map((n, k) => k > 0 ? `<option value="${k}" ${k === +at ? 'selected' : ''}>${k + 1}. ${esc(n || 'Abschnitt ' + (k + 1))}</option>` : '').join('');
+          return (+at >= secs.length || +at < 1) ? o + `<option value="${esc(at)}" selected>${esc(secName(s, { at, name: '' }))}</option>` : o;
+        };
+        const changes = (a.changes || []).map((c, ci) => {
+          const ci_ = `${d} data-ci="${ci}"`, ic = instOf(m, c.inst);
+          return `<div class="ichg" style="border-color:${esc(ic?.color || '#555')}">
+            <div class="row"><b class="label">⇄ Wechsel ab</b> <select data-f="cAt" ${ci_}>${secOpts(c.at)}</select>
+              <button class="danger" data-act="delChange" ${ci_}>✕</button></div>
+            <div class="row"><select data-f="cInst" ${ci_}>${opts(c.inst)}</select></div>
+            <div class="row">${tuningSelect('cTuning', c.tuning, ci_)} Capo <select data-f="cCapo" ${ci_}>${capo(c.capo)}</select></div>
+          </div>`;
+        }).join('');
         return `<div class="assign" style="border-color:${esc(i?.color || '#555')}">
           <b>${esc(m.name)}</b>
           <div class="row"><select data-f="inst" ${d}>${opts(a.inst)}</select></div>
-          <div class="row"><input type="text" list="tunings" data-f="tuning" ${d} value="${esc(a.tuning || '')}" placeholder="Tuning">
-            Capo <select data-f="capo" ${d}>${capo}</select></div>
+          <div class="row">${tuningSelect('tuning', a.tuning, d)} Capo <select data-f="capo" ${d}>${capo(a.capo)}</select></div>
           <div class="row"><span class="label">Backup</span><select data-f="backup" ${d}>${opts(a.backup)}</select></div>
           ${(a.notes || []).map((n, ni) => `<div class="row"><input type="text" class="note" style="flex:1;width:auto" data-f="note" data-ni="${ni}" ${d} value="${esc(n)}" placeholder="Notiz">
             <button class="danger" data-act="delNote" data-ni="${ni}" ${d}>✕</button></div>`).join('')}
           <button data-act="addNote" ${d}>+ Notizfeld</button>
+          ${changes}
+          <button data-act="addChange" ${d} ${secs.length > 1 ? '' : 'disabled'}>+ Wechsel im Song</button>
+          ${secs.length > 1 ? '' : `<div class="label">Wechsel im Song: Abschnitte erscheinen, sobald der Song einmal in AbleSet aktiv war.</div>`}
         </div>`;
       }).join('')}</div>
     </div>`;
@@ -352,12 +440,13 @@ function renderPrint() {
   <p>Gedruckt am ${new Date().toLocaleString('de-DE')} · ⇄ = Wechsel</p>
   <table><tr><th>#</th><th>Song</th>${p.musicians.map(m => `<th>${esc(m.name)}</th>`).join('')}</tr>
   ${songs.map((s, i) => `<tr><td>${i + 1}</td><td>${esc(s)}</td>${p.musicians.map(m => {
-    const a = assignOf(s, m.id), prev = assignOf(songs[i - 1], m.id), inst = instOf(m, a.inst), b = instOf(m, a.backup);
+    const a = assignOf(s, m.id), prev = endOf(songs[i - 1], m.id), inst = instOf(m, a.inst), b = instOf(m, a.backup);
     const chg = i > 0 && isChange(prev, a);
+    const inSong = realChanges(s, m.id).map(({ c }) => `<br><b>⇄ ab „${esc(secName(s, c))}“: ${esc(describe(m, c))}</b>`).join('');
     return `<td class="${chg ? 'chg' : ''}">${chg ? '⇄ ' : ''}${inst ? `<span class="sw" style="background:${esc(inst.color)}"></span>${esc(inst.name)}` : '—'}
       ${a.tuning ? ' · ' + esc(a.tuning) : ''}${a.capo ? ' · Capo ' + esc(a.capo) : ''}
       ${b ? `<br><small>Backup: ${esc(b.name)}</small>` : ''}
-      ${(a.notes || []).filter(n => norm(n)).map(n => `<br><small>${esc(n)}</small>`).join('')}</td>`;
+      ${(a.notes || []).filter(n => norm(n)).map(n => `<br><small>${esc(n)}</small>`).join('')}${inSong}</td>`;
   }).join('')}</tr>`).join('')}</table>`;
 }
 
@@ -410,6 +499,14 @@ document.addEventListener('click', e => {
       if (!confirm(`„${song}“ mit allen Zuordnungen entfernen?`)) return;
       delete p.songs[song]; break;
     case 'addNote': ensureAssign(song, mid).notes.push(''); break;
+    case 'addChange': {
+      const a = ensureAssign(song, mid), secs = sectionsFor(song), last = endOf(song, mid);
+      const used = a.changes.map(c => +c.at);
+      const at = Math.min(Math.max(1, ...used.map(x => x + 1)), Math.max(1, secs.length - 1));
+      a.changes.push({ at, name: secs[at] || '', inst: last.inst || '', tuning: last.tuning || '', capo: last.capo || '' });
+      break;
+    }
+    case 'delChange': ensureAssign(song, mid).changes.splice(+t.dataset.ci, 1); break;
     case 'delNote': ensureAssign(song, mid).notes.splice(ni, 1); break;
     default: return;
   }
@@ -421,7 +518,14 @@ document.addEventListener('change', e => {
   if (!f || !S.data) return;
   const p = P(), mi = +t.dataset.mi, ii = +t.dataset.ii, si = +t.dataset.si, ni = +t.dataset.ni, mid = t.dataset.mid;
   const song = editSongs[si];
-  const v = t.value;
+  let v = t.value;
+  // „Eigenes Tuning …“: Wert abfragen, bei Abbruch Anzeige zurücksetzen
+  if (v === '__custom') {
+    const old = f === 'cTuning' ? ensureAssign(song, mid).changes[+t.dataset.ci]?.tuning : assignOf(song, mid).tuning;
+    const x = prompt('Tuning eingeben (z. B. Drop B, Open C, Eb Drop Db):', old || '');
+    if (x == null || !norm(x)) { renderEditor(); return; }
+    v = norm(x);
+  }
   switch (f) {
     // persönliche Einstellungen – nur lokal
     case 'mine':
@@ -442,11 +546,18 @@ document.addEventListener('change', e => {
     }
     case 'inst': case 'tuning': case 'capo': case 'backup': ensureAssign(song, mid)[f] = v; break;
     case 'note': ensureAssign(song, mid).notes[ni] = v; break;
+    case 'cAt': case 'cInst': case 'cTuning': case 'cCapo': {
+      const c = ensureAssign(song, mid).changes[+t.dataset.ci]; if (!c) return;
+      const key = { cAt: 'at', cInst: 'inst', cTuning: 'tuning', cCapo: 'capo' }[f];
+      c[key] = f === 'cAt' ? +v : v;
+      if (f === 'cAt') c.name = sectionsFor(song)[+v] || c.name;
+      break;
+    }
     default: return;
   }
   push(); renderLive();
   // Farbbalken im Editor sofort aktualisieren
-  if (f === 'inst' || f === 'iColor') { const keep = document.activeElement; renderEditor(); keep?.blur?.(); }
+  if (['inst', 'iColor', 'cInst', 'cAt', 'tuning', 'cTuning'].includes(f)) { const keep = document.activeElement; renderEditor(); keep?.blur?.(); }
 });
 
 window.addEventListener('beforeprint', renderPrint);

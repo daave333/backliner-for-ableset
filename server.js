@@ -198,6 +198,10 @@ const live = {
   part: '',              // Überschrift, unter der der aktuelle Song steht
   notesBefore: [],       // AbleSet-Notizen direkt vor dem aktuellen Song
   notesAfter: [],        // AbleSet-Notizen direkt nach dem aktuellen Song
+  sections: [],          // Abschnitte (Locators) des aktuellen Songs
+  sectionIndex: -1,      // aktueller Abschnitt
+  nextSectionIndex: -1,  // nächster Abschnitt (laut AbleSet, berücksichtigt Sprünge)
+  sectionRemaining: null,// Sekunden bis Ende des aktuellen Abschnitts
   project: { name: '', folder: '', found: false, needsSetup: false, reason: 'none' },
   library: libraryList(),
   app: { current: readJson(path.join(__dirname, 'package.json'), {}).version || '', latest: null, available: false }
@@ -212,7 +216,7 @@ function scheduleLearn() {
   learnTimer = setTimeout(() => {
     const song = live.setlist[live.activeIndex];
     if (song == null) return;
-    const entry = { part: live.part || '', before: live.notesBefore, after: live.notesAfter };
+    const entry = { part: live.part || '', before: live.notesBefore, after: live.notesAfter, sections: live.sections };
     const m = meta();
     if (JSON.stringify(m[song]) !== JSON.stringify(entry)) {
       m[song] = entry; saveMeta(); broadcast(false, true);
@@ -237,7 +241,8 @@ function updateSetlist(names) {
 // ---------- OSC ----------
 const FILTER = ['/setlist/songs', '/setlist/activeSongIndex', '/setlist/remainingTimeInSong', '/global/isPlaying',
   '/setlist/songDescriptions', '/setlist/activePartName', '/setlist/notesBeforeActiveSong', '/setlist/notesAfterActiveSong',
-  '/global/projectName'];
+  '/global/projectName', '/setlist/sections', '/setlist/activeSectionIndex', '/setlist/nextSectionIndex',
+  '/setlist/remainingTimeInSection'];
 const osc = new Server(LISTEN_PORT, '0.0.0.0');
 const ableset = new Client(ABLESET_HOST, ABLESET_PORT);
 let lastMessage = 0;
@@ -264,6 +269,10 @@ osc.on('message', ([address, ...args]) => {
     case '/setlist/notesBeforeActiveSong': live.notesBefore = cleanList(args); scheduleLearn(); break;
     case '/setlist/notesAfterActiveSong': live.notesAfter = cleanList(args); scheduleLearn(); break;
     case '/setlist/remainingTimeInSong': live.remaining = Number(args[0]); break;
+    case '/setlist/sections': live.sections = args.map(a => a == null ? '' : String(a)); scheduleLearn(); break;
+    case '/setlist/activeSectionIndex': live.sectionIndex = args[0] == null ? -1 : Number(args[0]); break;
+    case '/setlist/nextSectionIndex': live.nextSectionIndex = args[0] == null ? -1 : Number(args[0]); break;
+    case '/setlist/remainingTimeInSection': live.sectionRemaining = args[0] == null ? null : Number(args[0]); break;
     case '/global/isPlaying': live.playing = !!Number(args[0]); break;
     case '/global/projectName': {
       const name = String(args[0] ?? '').replace(/\.als$/i, '').trim();

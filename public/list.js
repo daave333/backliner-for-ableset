@@ -15,7 +15,7 @@ function shortGear(m, a) {
 
 // Status eines Wechsels vor Song j: done | go | prep | ''
 function eventState(j, to) {
-  const { activeIndex, remaining } = S.live;
+  const { activeIndex } = S.live, { remaining } = clock();
   if (j <= activeIndex) return 'done';
   const k = j - activeIndex;
   const t = timing(to);
@@ -81,8 +81,9 @@ function renderList() {
       }).join('');
       // Wechsel innerhalb des Songs, nach Abschnitt sortiert
       const inSong = mine.flatMap(m => realChanges(song, m.id).map(x => ({ m, ...x }))).sort((x, y) => x.c.at - y.c.at).map(({ m, c, from }) => {
-        const st = inSongState(j, song, c);
-        const label = st === 'go' ? 'JETZT WECHSELN' : st === 'prep' ? 'Im Song' : 'Im Song';
+        const { st } = inSongState(j, song, c);
+        // keine Sekunden hier – sonst würde die Liste jede Sekunde neu gebaut (der Countdown steht im Balken unten)
+        const label = st === 'go' ? 'JETZT WECHSELN' : 'Im Song';
         return `<div class="insong ${st}"><span class="evhead">⇄ ${label} ab „${esc(secName(song, c))}“</span>
           <span class="who">${esc(m.name)}</span> ${esc(instOf(m, from.inst)?.name || '—')} → ${shortGear(m, c)}</div>`;
       }).join('');
@@ -102,7 +103,7 @@ function renderList() {
   // DOM nur anfassen, wenn sich wirklich etwas geändert hat (Countdown läuft separat)
   if (html !== LIST.html) { el.innerHTML = html; LIST.html = html; }
   const rt = $('rowTime');
-  if (rt) rt.textContent = fmt(S.live.remaining);
+  if (rt) rt.textContent = fmt(clock().remaining);
 }
 
 // ---------- Automatisches Scrollen ----------

@@ -46,45 +46,121 @@ function isChange(a, b) {
   return norm(a.inst) !== norm(b.inst) || normTuning(a.tuning) !== normTuning(b.tuning) || norm(a.capo) !== norm(b.capo);
 }
 
-// ---------- Wechsel innerhalb eines Songs (an AbleSet-Abschnitten) ----------
-// Ablauf eines Musikers in einem Song: Ausstattung zu Songbeginn, dann Wechsel ab Abschnitt „at“
+// ---------- Uhr: Restzeiten laufen auf dem iPad flüssig weiter ----------
+// AbleSet schickt die Restzeit nur ein paar Mal pro Sekunde; dazwischen rechnet das iPad selbst weiter.
+const CLK = { rem: null, remAt: 0, sec: null, secAt: 0 };
+function noteLive(l) {
+  const t = performance.now();
+  if (l.remaining !== CLK.rem) { CLK.rem = l.remaining; CLK.remAt = t; }
+  if (l.sectionRemaining !== CLK.sec) { CLK.sec = l.sectionRemaining; CLK.secAt = t; }
+}
+function clock() {
+  const t = performance.now(), run = S.live.playing;
+  const f = (v, at) => (v == null || isNaN(v)) ? v : run ? Math.max(0, v - Math.min(2, (t - at) / 1000)) : v;
+  let remaining = f(S.live.remaining, CLK.remAt);
+  // Beim Abspielen nie kurz rückwärts springen (kleine Abweichungen zwischen Hochrechnung und AbleSet)
+  if (run && remaining != null && CLK.shown != null && remaining > CLK.shown && remaining - CLK.shown < 1.5) remaining = CLK.shown;
+  CLK.shown = remaining;
+  return { remaining, sectionRemaining: f(S.live.sectionRemaining, CLK.secAt) };
+}
+
+// ---------- Wechsel innerhalb eines Songs (an Abschnitten) ----------
+// Abschnitte kommen aus der Ableton-Projektdatei (sofort bekannt) oder von AbleSet (aktueller Song).
+// Ein Wechsel merkt sich den Namen des Abschnitts und das wievielte Vorkommen (z. B. 2. Refrain).
+const secKey = n => norm(n).replace(/^>+\s*/, '').toLowerCase();
+function alsOf(song) {
+  const a = S.als || {};
+  if (song == null) return null;
+  if (a[song]) return a[song];
+  const k = Object.keys(a).find(x => x.toLowerCase() === String(song).toLowerCase());
+  return k ? a[k] : null;
+}
+function sectionsFor(song) {
+  if (song != null && song === S.live.setlist?.[S.live.activeIndex] && S.live.sections?.length) return S.live.sections;
+  const fromAls = (alsOf(song)?.sections || []).map(x => x.name);
+  if (fromAls.length) return fromAls;
+  return (S.meta && S.meta[song]?.sections) || [];
+}
+// Index des n-ten Vorkommens eines Abschnittsnamens
+function findSec(list, name, occ) {
+  let k = 0;
+  for (let i = 0; i < list.length; i++) if (secKey(list[i]) === secKey(name) && ++k >= (occ || 1)) return i;
+  return -1;
+}
+// Verweis auf Abschnitt k einer Liste: Name + wievieltes Vorkommen (+ Index als Rückfall)
+function secRef(list, k) {
+  const name = list[k] || '';
+  return { name, occ: list.slice(0, k + 1).filter(n => secKey(n) === secKey(name)).length || 1, at: k };
+}
+// Ältere Einträge (nur Index) bekommen ihren Namen aus der Liste
+const changeName = (song, c) => norm(c.name) || sectionsFor(song)[c.at] || `Abschnitt ${+c.at + 1}`;
+const secName = (song, c) => changeName(song, c) + ((c.occ || 1) > 1 ? ` (${c.occ}.)` : '');
+function changeOrder(song, c) {
+  const i = findSec(sectionsFor(song), changeName(song, c), c.occ);
+  return i >= 0 ? i : (Number.isFinite(+c.at) ? +c.at : 999);
+}
+// Ablauf eines Musikers in einem Song: Ausstattung zu Songbeginn, dann die Wechsel in Abschnitts-Reihenfolge
 function segmentsOf(song, mid) {
   const a = assignOf(song, mid);
-  const chg = (a.changes || []).filter(c => c && Number.isFinite(+c.at) && +c.at > 0).sort((x, y) => x.at - y.at);
+  const chg = (a.changes || []).filter(c => c && (norm(c.name) || Number.isFinite(+c.at)))
+    .map(c => ({ ...c, _o: changeOrder(song, c) })).sort((x, y) => x._o - y._o);
   return [a, ...chg];
 }
 const startOf = (song, mid) => assignOf(song, mid);
 const endOf = (song, mid) => { const s = segmentsOf(song, mid); return s[s.length - 1]; };
-// Abschnitte eines Songs: beim aktuellen Song live von AbleSet, sonst das Gelernte
-function sectionsFor(song) {
-  if (song != null && song === S.live.setlist?.[S.live.activeIndex] && S.live.sections?.length) return S.live.sections;
-  return (S.meta && S.meta[song]?.sections) || [];
-}
-const secName = (song, c) => norm(sectionsFor(song)[c.at]) || norm(c.name) || `Abschnitt ${+c.at + 1}`;
-// Ausstattung gerade jetzt (beim aktuellen Song abhängig vom Abschnitt)
-function nowOf(song, mid) {
-  const segs = segmentsOf(song, mid);
-  if (song !== S.live.setlist?.[S.live.activeIndex]) return segs[0];
-  const si = S.live.sectionIndex ?? -1;
-  return segs.filter((c, i) => i === 0 || c.at <= si).pop();
-}
-// Status eines Wechsels im Song: done | go | prep | '' (j = Position des Songs in der Setlist)
-function inSongState(j, song, c) {
-  const { activeIndex, sectionIndex, nextSectionIndex, sectionRemaining } = S.live;
-  if (j < activeIndex) return 'done';
-  if (j > activeIndex) return '';
-  if (c.at <= sectionIndex) return 'done';
-  if (c.at === nextSectionIndex && sectionRemaining != null && sectionRemaining <= timing(song).go) return 'go';
-  return 'prep';
-}
-// Noch ausstehende Wechsel im aktuellen Song
-function pendingInSong(song, j, m) {
-  return realChanges(song, m.id).map(({ c }) => ({ c, st: inSongState(j, song, c) })).filter(x => x.st === 'go' || x.st === 'prep');
-}
-// Nur Wechsel, bei denen sich wirklich etwas ändert (mit der vorherigen Ausstattung)
+// Nur Wechsel, bei denen sich wirklich etwas ändert (gegenüber der Ausstattung davor)
 function realChanges(song, mid) {
   const segs = segmentsOf(song, mid);
   return segs.slice(1).map((c, k) => ({ c, from: segs[k] })).filter(x => isChange(x.from, x.c));
+}
+function nearest(list, name, hint) {
+  if (hint >= 0 && secKey(list[hint]) === secKey(name)) return hint;
+  return list.findIndex(n => secKey(n) === secKey(name));
+}
+// Wo steht der laufende Song? → Liste der Abschnitte, aktueller Index, Sekunden bis Abschnitt i
+function songPos(song) {
+  const L = S.live, ck = clock(), ax = alsOf(song);
+  // 1) Projektdatei + Song-Restzeit: genaue Zeit bis zu jedem Abschnitt
+  if (ax && ax.duration && ax.sections?.length && ck.remaining != null) {
+    const elapsed = ax.duration - ck.remaining;
+    let cur = -1;
+    ax.sections.forEach((x, i) => { if (x.t <= elapsed + 0.05) cur = i; });
+    const names = ax.sections.map(x => x.name);
+    // Gegenprobe: meldet AbleSet einen anderen Abschnitt (z. B. nach einem Sprung), gilt AbleSet
+    // (nur wenn AbleSet einen Abschnitt nennt, den es in diesem Song laut Projektdatei auch gibt)
+    const liveName = norm(L.sectionName), known = liveName && names.some(n => secKey(n) === secKey(liveName));
+    if (!known || cur < 0 || secKey(names[cur]) === secKey(liveName))
+      return { list: names, cur, until: i => ax.sections[i] ? ax.sections[i].t - elapsed : null };
+  }
+  // 2) Abschnitts-Werte von AbleSet
+  const list = L.sections?.length ? L.sections : sectionsFor(song);
+  let cur = L.sectionIndex ?? -1, nxt = L.nextSectionIndex ?? -1;
+  if (norm(L.sectionName)) { const k = nearest(list, L.sectionName, cur); if (k >= 0) cur = k; }
+  if (norm(L.nextSectionName)) { const k = nearest(list, L.nextSectionName, nxt); if (k >= 0) nxt = k; }
+  return { list, cur, until: i => (i === nxt && ck.sectionRemaining != null) ? ck.sectionRemaining : null };
+}
+// Status eines Wechsels im Song: { st: done | go | prep | '', t: Sekunden bis zum Wechsel }
+function inSongState(j, song, c) {
+  const { activeIndex } = S.live;
+  if (j < activeIndex) return { st: 'done' };
+  if (j > activeIndex) return { st: '' };
+  const p = songPos(song);
+  let i = findSec(p.list, changeName(song, c), c.occ);
+  if (i < 0) i = Number.isFinite(+c.at) ? +c.at : 999;
+  if (i <= p.cur) return { st: 'done' };
+  const t = p.until(i);
+  if (t != null && t <= timing(song).go) return { st: 'go', t };
+  return { st: 'prep', t };
+}
+// Ausstattung gerade jetzt (beim laufenden Song abhängig vom Abschnitt)
+function nowOf(song, mid) {
+  const segs = segmentsOf(song, mid), j = S.live.setlist?.indexOf(song);
+  if (j !== S.live.activeIndex) return segs[0];
+  return segs.filter((c, i) => i === 0 || inSongState(j, song, c).st === 'done').pop();
+}
+// Noch ausstehende Wechsel im laufenden Song
+function pendingInSong(song, j, m) {
+  return realChanges(song, m.id).map(({ c }) => ({ c, ...inSongState(j, song, c) })).filter(x => x.st === 'go' || x.st === 'prep');
 }
 function timing(song) {
   const o = (song != null && P().songs[song]?.override) || {};
@@ -104,7 +180,8 @@ function connect() {
   ws.onmessage = e => {
     const msg = JSON.parse(e.data);
     const dataChanged = !!msg.data;
-    S.live = msg.live;
+    S.live = msg.live; noteLive(msg.live);
+    if (msg.als) S.als = msg.als;
     if (msg.data) S.data = msg.data;
     if (msg.meta) S.meta = msg.meta;
     render(dataChanged);
@@ -168,7 +245,7 @@ function slotHtml(m, song, title, highlight, state) {
   const a = state || assignOf(song, m.id), base = assignOf(song, m.id), i = instOf(m, a.inst), b = instOf(m, base.backup);
   const j = S.live.setlist.indexOf(song);
   const inSong = realChanges(song, m.id).map(({ c }) => {
-    const st = inSongState(j, song, c);
+    const { st } = inSongState(j, song, c);
     return `<div class="insong ${st}">⇄ ab „${esc(secName(song, c))}“: ${esc(describe(m, c))}</div>`;
   }).join('');
   return `<div class="slot${highlight ? ' change' : ''}" style="border-color:${esc(i?.color || '#555')}">
@@ -182,7 +259,8 @@ function slotHtml(m, song, title, highlight, state) {
 
 function renderLive() {
   if (!S.data) return;
-  const { setlist, activeIndex, remaining, playing } = S.live;
+  const { setlist, activeIndex, playing } = S.live;
+  const { remaining } = clock();
   const cur = setlist[activeIndex], next = setlist[activeIndex + 1];
   $('song').textContent = cur ?? (setlist.length ? 'Kein Song aktiv' : 'Keine Setlist von AbleSet');
   $('nowLabel').textContent = (activeIndex >= 0 ? `Jetzt · Song ${activeIndex + 1} von ${setlist.length}` : 'Jetzt') + (S.live.part ? ` · ${S.live.part}` : '');
@@ -199,8 +277,8 @@ function renderLive() {
     const goIn = pend.find(x => x.st === 'go');
     if (goIn) {
       level = 'go';
-      const r = S.live.sectionRemaining;
-      const when = (!playing || r <= 0.5) ? 'JETZT' : `in ${Math.ceil(r)} s`;
+      const r = goIn.t;
+      const when = (!playing || r == null || r <= 0.5) ? 'JETZT' : `in ${Math.ceil(r)} s`;
       alerts.go.push(`${m.name}: Wechsel ${when} (ab „${secName(cur, goIn.c)}“) → ${describe(m, goIn.c)}`);
     }
     // 2) Wechsel zum nächsten Song steht unmittelbar bevor
@@ -254,6 +332,9 @@ function renderLive() {
   else if (alerts.prep.length) { banner.className = 'prep'; banner.textContent = '🟡 ' + alerts.prep.join('  ·  '); }
   else { banner.className = ''; banner.textContent = ''; }
 }
+
+// Countdown und Hinweise flüssig weiterzählen, auch zwischen zwei Nachrichten von AbleSet
+setInterval(() => { if (S.data && S.live.playing && document.visibilityState !== 'hidden') renderLive(); }, 250);
 
 function applyLook() {
   document.body.classList.toggle('s', me.size === 's');
@@ -345,6 +426,14 @@ function renderSettings() {
     <div class="label">AbleSet meldet Notizen und Überschriften nur für den aktuellen Song. Die App merkt sich alles, sobald ein Song einmal dran war – nach einem Durchlauf ist die Liste vollständig.
       Bekannt sind gerade ${S.live.setlist.length ? `${S.live.setlist.filter(s => S.meta?.[s]).length} von ${S.live.setlist.length}` : Object.keys(S.meta || {}).length} Songs.</div>
     <div class="row"><button data-act="resetMeta" class="danger">Gelernte Notizen zurücksetzen</button></div>
+  </div>
+  <div class="card">
+    <h2>Abschnitte für „Wechsel im Song“</h2>
+    <div class="label">${Object.keys(S.als || {}).length
+      ? `Aus der Ableton-Projektdatei gelesen: ${Object.keys(S.als).length} Songs mit Abschnitten (Locators „> Name“). Nach Änderungen in Ableton einfach speichern – Backliner liest die Datei neu ein.`
+      : 'Keine Projektdatei gefunden – Abschnitte kommen dann nur von AbleSet (sobald ein Song einmal aktiv war) oder werden im Editor von Hand eingetippt.'}</div>
+    <div class="label">Gerade von AbleSet: Abschnitt „${esc(S.live.sectionName || '–')}“ (${S.live.sectionIndex ?? '–'}), nächster „${esc(S.live.nextSectionName || '–')}“ (${S.live.nextSectionIndex ?? '–'}), noch ${S.live.sectionRemaining == null ? '–' : Math.round(S.live.sectionRemaining) + ' s'}.</div>
+    <div class="row"><a href="/api/debug" target="_blank"><button>Diagnose-Daten öffnen</button></a></div>
   </div>`;
 }
 
@@ -401,14 +490,16 @@ function renderEditor() {
         const capo = v => `<option value="">–</option>` + Array.from({ length: 12 }, (_, n) => `<option ${String(n + 1) === String(v) ? 'selected' : ''}>${n + 1}</option>`).join('');
         const d = `data-si="${si}" data-mid="${m.id}"`;
         const secs = sectionsFor(s);
-        const secOpts = at => {
-          const o = secs.map((n, k) => k > 0 ? `<option value="${k}" ${k === +at ? 'selected' : ''}>${k + 1}. ${esc(n || 'Abschnitt ' + (k + 1))}</option>` : '').join('');
-          return (+at >= secs.length || +at < 1) ? o + `<option value="${esc(at)}" selected>${esc(secName(s, { at, name: '' }))}</option>` : o;
+        const secOpts = c => {
+          const sel = findSec(secs, changeName(s, c), c.occ);
+          const o = secs.map((n, k) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${k + 1}. ${esc(n || 'Abschnitt ' + (k + 1))}</option>`).join('');
+          const missing = sel < 0 ? `<option value="" selected>${esc(secName(s, c))}${secs.length ? ' (nicht im Song gefunden)' : ''}</option>` : '';
+          return missing + o + `<option value="__name">✎ Name eingeben …</option>`;
         };
         const changes = (a.changes || []).map((c, ci) => {
           const ci_ = `${d} data-ci="${ci}"`, ic = instOf(m, c.inst);
           return `<div class="ichg" style="border-color:${esc(ic?.color || '#555')}">
-            <div class="row"><b class="label">⇄ Wechsel ab</b> <select data-f="cAt" ${ci_}>${secOpts(c.at)}</select>
+            <div class="row"><b class="label">⇄ Wechsel ab</b> <select data-f="cAt" ${ci_}>${secOpts(c)}</select>
               <button class="danger" data-act="delChange" ${ci_}>✕</button></div>
             <div class="row"><select data-f="cInst" ${ci_}>${opts(c.inst)}</select></div>
             <div class="row">${tuningSelect('cTuning', c.tuning, ci_)} Capo <select data-f="cCapo" ${ci_}>${capo(c.capo)}</select></div>
@@ -423,8 +514,7 @@ function renderEditor() {
             <button class="danger" data-act="delNote" data-ni="${ni}" ${d}>✕</button></div>`).join('')}
           <button data-act="addNote" ${d}>+ Notizfeld</button>
           ${changes}
-          <button data-act="addChange" ${d} ${secs.length > 1 ? '' : 'disabled'}>+ Wechsel im Song</button>
-          ${secs.length > 1 ? '' : `<div class="label">Wechsel im Song: Abschnitte erscheinen, sobald der Song einmal in AbleSet aktiv war.</div>`}
+          <button data-act="addChange" ${d}>+ Wechsel im Song</button>
         </div>`;
       }).join('')}</div>
     </div>`;
@@ -501,9 +591,18 @@ document.addEventListener('click', e => {
     case 'addNote': ensureAssign(song, mid).notes.push(''); break;
     case 'addChange': {
       const a = ensureAssign(song, mid), secs = sectionsFor(song), last = endOf(song, mid);
-      const used = a.changes.map(c => +c.at);
-      const at = Math.min(Math.max(1, ...used.map(x => x + 1)), Math.max(1, secs.length - 1));
-      a.changes.push({ at, name: secs[at] || '', inst: last.inst || '', tuning: last.tuning || '', capo: last.capo || '' });
+      const base = { inst: last.inst || '', tuning: last.tuning || '', capo: last.capo || '' };
+      if (secs.length) {
+        // nächster noch freier Abschnitt nach dem letzten Wechsel
+        const used = a.changes.map(c => findSec(secs, changeName(song, c), c.occ));
+        const at = Math.min(Math.max(1, ...used.map(x => x + 1)), secs.length - 1);
+        a.changes.push({ ...base, ...secRef(secs, Math.max(0, at)) });
+      } else {
+        // Abschnitte noch unbekannt (keine Projektdatei, Song noch nie aktiv): Namen eintippen
+        const n = prompt('Ab welchem Abschnitt wird gewechselt? Name wie in Ableton (z. B. Bridge):', '');
+        if (!n || !norm(n)) return;
+        a.changes.push({ ...base, name: norm(n).replace(/^>+\s*/, ''), occ: 1 });
+      }
       break;
     }
     case 'delChange': ensureAssign(song, mid).changes.splice(+t.dataset.ci, 1); break;
@@ -546,11 +645,18 @@ document.addEventListener('change', e => {
     }
     case 'inst': case 'tuning': case 'capo': case 'backup': ensureAssign(song, mid)[f] = v; break;
     case 'note': ensureAssign(song, mid).notes[ni] = v; break;
-    case 'cAt': case 'cInst': case 'cTuning': case 'cCapo': {
+    case 'cAt': {
       const c = ensureAssign(song, mid).changes[+t.dataset.ci]; if (!c) return;
-      const key = { cAt: 'at', cInst: 'inst', cTuning: 'tuning', cCapo: 'capo' }[f];
-      c[key] = f === 'cAt' ? +v : v;
-      if (f === 'cAt') c.name = sectionsFor(song)[+v] || c.name;
+      if (v === '__name') {
+        const n = prompt('Name des Abschnitts wie in Ableton (z. B. Bridge):', changeName(song, c));
+        if (!n || !norm(n)) { renderEditor(); return; }
+        Object.assign(c, { name: norm(n).replace(/^>+\s*/, ''), occ: 1 }); delete c.at;
+      } else if (v !== '') Object.assign(c, secRef(sectionsFor(song), +v));
+      break;
+    }
+    case 'cInst': case 'cTuning': case 'cCapo': {
+      const c = ensureAssign(song, mid).changes[+t.dataset.ci]; if (!c) return;
+      c[{ cInst: 'inst', cTuning: 'tuning', cCapo: 'capo' }[f]] = v;
       break;
     }
     default: return;

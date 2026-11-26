@@ -97,9 +97,11 @@ Ein **Wechsel** entsteht automatisch, sobald sich Instrument, Tuning oder Capo g
 
 Spielt jemand innerhalb eines Songs ein zweites Instrument (z. B. Strat bis zum Refrain, ab der Bridge Les Paul), tippst du beim Musiker auf **+ Wechsel im Song**. Dann wählst du den Abschnitt, ab dem gewechselt wird, und Instrument, Tuning und Capo dafür. Es können mehrere Wechsel pro Song sein.
 
-Die Abschnitte kommen aus AbleSet (die Locators im Song). AbleSet meldet sie nur für den gerade aktiven Song – Backliner merkt sie sich, sobald ein Song einmal aktiv war. Darum beim Soundcheck einmal durch die Setlist klicken; vorher ist der Knopf ausgegraut.
+Die Abschnitte liest Backliner direkt aus der Ableton-Projektdatei – das sind die Locators nach AbleSet-Schreibweise, also `> Bridge` oder `>> Refrain`. Du musst die Songs dafür nicht anspielen. Nach Änderungen an den Locators in Ableton einfach speichern, Backliner liest die Datei nach ein paar Sekunden neu ein. Ohne Projektdatei (z. B. nicht gespeichertes Set) kommen die Abschnitte von AbleSet, sobald ein Song einmal aktiv war – oder du tippst den Namen über „✎ Name eingeben …“ selbst ein.
 
-Im Song gibt es dieselben Hinweise wie zwischen Songs: **gelb**, solange der Wechsel im laufenden Song noch aussteht, **rot** mit Countdown, wenn der Abschnitt davor gleich endet (gleiche Sekunden-Einstellung wie bei Songs).
+Im Song gibt es dieselben Hinweise wie zwischen Songs: **gelb**, solange der Wechsel im laufenden Song noch aussteht, **rot** mit Countdown, sobald der Abschnitt weniger Sekunden entfernt ist als bei „Gleich geht’s los“ eingestellt. Die Zeit bis zum Abschnitt rechnet Backliner aus der Song-Restzeit und dem Tempo im Projekt aus; springt jemand in AbleSet zu einem anderen Abschnitt, gilt die Meldung von AbleSet.
+
+Unter **Einstellungen → Abschnitte für „Wechsel im Song“** siehst du, ob die Projektdatei gelesen wurde und was AbleSet gerade meldet. **Diagnose-Daten öffnen** zeigt alle Rohdaten – hilfreich, wenn etwas nicht passt.
 
 **Eigene Zeiten pro Song**
 
@@ -189,6 +191,7 @@ Von Hand prüfen: Plektrum-Symbol → **Nach Updates suchen …**. Die installie
 | „Port 8080 belegt“ im Menü | Backliner läuft doppelt oder ein anderes Programm nutzt den Port | Alle Backliner beenden, neu starten |
 | Neues Projekt erscheint nicht | Projekt in Ableton noch nicht gespeichert | Projekt speichern; sonst „Projektordner wählen …“ |
 | Notizen oder Überschriften fehlen | Song war noch nicht einmal dran | Einmal durch die Setlist klicken |
+| Kein Hinweis bei Wechsel im Song | Abschnittsname passt nicht zu den Locators | Im Editor steht dann „(nicht im Song gefunden)“ – Abschnitt neu auswählen; Einstellungen → Abschnitte prüfen |
 | Hinweise kommen nicht | Keine Musiker ausgewählt oder kein Wechsel eingetragen | Einstellungen → Ich betreue heute; im Editor Instrument, Tuning, Capo prüfen |
 | Änderung „nicht gespeichert“ | In Ableton wurde währenddessen das Projekt gewechselt | Änderung noch einmal eintragen |
 | App startet nach Update nicht | macOS blockiert die neue Version | Rechtsklick auf die App → Öffnen; sonst die DMG von GitHub neu installieren |

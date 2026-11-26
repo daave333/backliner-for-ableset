@@ -10,6 +10,7 @@ const os = require('os');
 const { execFile } = require('child_process');
 const { WebSocketServer } = require('ws');
 const { Client, Server } = require('node-osc');
+const als = require('./als');
 
 const ABLESET_HOST = process.env.ABLESET_HOST || '127.0.0.1';
 const ABLESET_PORT = Number(process.env.ABLESET_PORT || 39051); // OSC-Eingang von AbleSet
@@ -90,7 +91,25 @@ function loadProject(name, folder) {
     : { name, folder, file, data: emptyProduction(name), meta: {}, needsSetup: true };
   project.data.name = name;
   console.log(`Projekt „${name}“: ${saved ? 'Daten geladen aus' : 'noch keine Daten in'} ${file}`);
+  setTimeout(refreshAls, 0);
 }
+
+// ---------- Songs und Abschnitte aus der .als-Datei ----------
+// So kennt Backliner alle Abschnitte schon, bevor ein Song in AbleSet lief, und kann die Zeit bis
+// zu einem Abschnitt aus der Song-Restzeit berechnen.
+let alsData = {}, alsStamp = '', alsDirty = true;
+function refreshAls() {
+  const file = project ? path.join(project.folder, alsName(project.name)) : null;
+  let stamp = '';
+  try { stamp = file ? `${file}|${fs.statSync(file).mtimeMs}` : ''; } catch {}
+  if (stamp === alsStamp) return;
+  alsStamp = stamp;
+  try { alsData = stamp ? als.analyze(file) : {}; }
+  catch (e) { alsData = {}; console.error('Projektdatei konnte nicht gelesen werden:', e.message); }
+  if (stamp) console.log(`Abschnitte aus ${path.basename(file)}: ${Object.keys(alsData).length} Songs`);
+  alsDirty = true; broadcast();
+}
+setInterval(refreshAls, 10000);              // nach dem Speichern in Ableton neu einlesen
 
 // Den Ordner zum Projektnamen finden: gemerkte Zuordnung → Spotlight → typische Ordner durchsuchen
 const alsName = name => `${name}.als`;
@@ -135,7 +154,7 @@ let resolving = 0;
 async function resolveProject(name) {
   const token = ++resolving;
   if (!name || /^(untitled|unbenannt|ohne titel)\b/i.test(name)) {
-    project = null;
+    project = null; refreshAls();
     live.project = { name: name || '', folder: '', found: false, needsSetup: false, reason: name ? 'unsaved' : 'none' };
     return broadcast(true);
   }
@@ -150,7 +169,7 @@ async function resolveProject(name) {
     try { writeJsonAtomic(MAP_FILE, projectMap); } catch {}
     loadProject(name, folder);
   } else {
-    project = null;
+    project = null; refreshAls();
     console.log(`Projektordner für „${name}“ nicht gefunden – nutze die Bibliothek.`);
   }
   updateProjectStatus();
@@ -202,6 +221,8 @@ const live = {
   sectionIndex: -1,      // aktueller Abschnitt
   nextSectionIndex: -1,  // nächster Abschnitt (laut AbleSet, berücksichtigt Sprünge)
   sectionRemaining: null,// Sekunden bis Ende des aktuellen Abschnitts
+  sectionName: '',       // Name des aktuellen Abschnitts
+  nextSectionName: '',   // Name des nächsten Abschnitts
   project: { name: '', folder: '', found: false, needsSetup: false, reason: 'none' },
   library: libraryList(),
   app: { current: readJson(path.join(__dirname, 'package.json'), {}).version || '', latest: null, available: false }
@@ -242,7 +263,7 @@ function updateSetlist(names) {
 const FILTER = ['/setlist/songs', '/setlist/activeSongIndex', '/setlist/remainingTimeInSong', '/global/isPlaying',
   '/setlist/songDescriptions', '/setlist/activePartName', '/setlist/notesBeforeActiveSong', '/setlist/notesAfterActiveSong',
   '/global/projectName', '/setlist/sections', '/setlist/activeSectionIndex', '/setlist/nextSectionIndex',
-  '/setlist/remainingTimeInSection'];
+  '/setlist/remainingTimeInSection', '/setlist/activeSectionName', '/setlist/nextSectionName'];
 const osc = new Server(LISTEN_PORT, '0.0.0.0');
 const ableset = new Client(ABLESET_HOST, ABLESET_PORT);
 let lastMessage = 0;
@@ -259,8 +280,10 @@ setInterval(() => {                           // Verbindungsstatus prüfen
   if (ok !== live.connected) { live.connected = ok; broadcast(); }
 }, 1000);
 
+const oscSeen = {};                           // Diagnose: zuletzt empfangene Werte je Adresse
 osc.on('message', ([address, ...args]) => {
   lastMessage = Date.now();
+  oscSeen[address] = { args: args.slice(0, 40), at: lastMessage, n: (oscSeen[address]?.n || 0) + 1 };
   switch (address) {
     case '/setlist/songs': updateSetlist(args.filter(a => a != null).map(String)); break;
     case '/setlist/activeSongIndex': live.activeIndex = Number(args[0]); scheduleLearn(); break;
@@ -273,6 +296,8 @@ osc.on('message', ([address, ...args]) => {
     case '/setlist/activeSectionIndex': live.sectionIndex = args[0] == null ? -1 : Number(args[0]); break;
     case '/setlist/nextSectionIndex': live.nextSectionIndex = args[0] == null ? -1 : Number(args[0]); break;
     case '/setlist/remainingTimeInSection': live.sectionRemaining = args[0] == null ? null : Number(args[0]); break;
+    case '/setlist/activeSectionName': live.sectionName = args[0] == null ? '' : String(args[0]); break;
+    case '/setlist/nextSectionName': live.nextSectionName = args[0] == null ? '' : String(args[0]); break;
     case '/global/isPlaying': live.playing = !!Number(args[0]); break;
     case '/global/projectName': {
       const name = String(args[0] ?? '').replace(/\.als$/i, '').trim();
@@ -292,6 +317,8 @@ const app = express();
 app.use(express.json({ limit: '5mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/api/state', (req, res) => res.json({ live, data: view() }));
+// Diagnose: was AbleSet zuletzt geschickt hat und was in der Projektdatei steht
+app.get('/api/debug', (req, res) => res.json({ now: Date.now(), osc: oscSeen, als: alsData, alsFile: alsStamp.split('|')[0] }));
 app.post('/api/data', (req, res) => {
   const d = req.body;
   if (!d || typeof d !== 'object' || !d.productions || !d.productions[d.activeProduction]) return res.status(400).send('Ungültige Daten');
@@ -365,11 +392,12 @@ function broadcast(withData = false, withMeta = false) {
   const msg = { live };
   if (dataDirty) msg.data = view();
   if (metaDirty) msg.meta = meta();
-  dataDirty = metaDirty = false;
+  if (alsDirty) msg.als = alsData;
+  dataDirty = metaDirty = alsDirty = false;
   const json = JSON.stringify(msg);
   wss.clients.forEach(c => c.readyState === 1 && c.send(json));
 }
-wss.on('connection', ws => ws.send(JSON.stringify({ live, data: view(), meta: meta() })));
+wss.on('connection', ws => ws.send(JSON.stringify({ live, data: view(), meta: meta(), als: alsData })));
 
 server.listen(HTTP_PORT, '0.0.0.0', () => console.log(`Backliner for AbleSet läuft auf Port ${HTTP_PORT}`));
 server.on('error', e => console.error('Server-Fehler:', e.message));

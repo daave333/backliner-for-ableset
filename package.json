@@ -1,7 +1,7 @@
 {
   "name": "backliner-for-ableset",
   "productName": "Backliner for AbleSet",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "description": "Setlisten-Ansicht für Backliner, gekoppelt an AbleSet",
   "main": "main.js",
   "scripts": {
@@ -41,6 +41,7 @@
       "main.js",
       "server.js",
       "updater.js",
+      "als.js",
       "public/**/*",
       "assets/**/*",
       "package.json"

@@ -23,7 +23,7 @@ Beim ersten Start: Rechtsklick auf die App → **Öffnen**, weil sie nicht von A
 - **Hinweise** pro Backliner einstellbar: „Vorbereiten“ X Songs vorher, „Gleich geht’s los“ X Sekunden vor Songende – pro Song überschreibbar.
 - **Bis zu 4 iPads**, jedes betreut frei wählbare Musiker (z. B. als Vertretung).
 - **Editor** für Musiker, Instrumente (Name + Farbe), Tuning, Capo, Backup-Gitarre und beliebig viele Notizfelder.
-- **Wechsel im Song** an AbleSet-Abschnitten (z. B. ab der Bridge Les Paul) – mit eigenen Hinweisen und Countdown.
+- **Wechsel im Song** an Abschnitten (z. B. ab der Bridge Les Paul) – die Abschnitte kommen direkt aus der Ableton-Projektdatei, mit eigenen Hinweisen und sekundengenauem Countdown.
 - **Setlist-Änderungen** aus AbleSet werden übernommen und markiert, damit Wechsel geprüft werden können.
 - **Daten im Ableton-Projektordner** (`Backliner/backliner.json`, mit Backups) – wie bei AbleSet.
 - **Menüleisten-Symbol** mit Status, Restzeit, QR-Code für die iPads, Projektordner und Update-Button.
@@ -57,6 +57,7 @@ Ohne Terminal: `DMG bauen.command` bzw. `Server direkt starten.command` doppelkl
 | `server.js` | OSC-Anbindung an AbleSet, Datenhaltung, Web- und WebSocket-Server |
 | `main.js` | Mac-App: Menüleisten-Symbol, Status-Fenster, Projektordner, Updates |
 | `updater.js` | Update über GitHub Releases |
+| `als.js` | Liest Songs, Abschnitte und Tempo aus der Ableton-Projektdatei |
 | `public/` | Oberfläche für die iPads (Live-Liste, Einstellungen, Editor, Druck) |
 | `icon-src/` | Icon-Vorlagen als SVG, `node icon-src/render-icons.js` erzeugt die PNGs |
 

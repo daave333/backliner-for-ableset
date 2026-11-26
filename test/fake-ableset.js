@@ -18,12 +18,17 @@ function sectionState() {
   return { secs, si, rem: (si + 1) * len - elapsed };
 }
 let lastSection = -1;
+// Älteres AbleSet ohne Abschnitts-Werte simulieren: --no-sections
+const noSections = process.argv.includes('--no-sections');
 function sendSection(force) {
+  if (noSections) return;
   const { secs, si, rem } = sectionState();
   if (force || si !== lastSection) {
     lastSection = si;
     client.send('/setlist/activeSectionIndex', si, () => {});
     client.send('/setlist/nextSectionIndex', si + 1 < secs.length ? si + 1 : -1, () => {});
+    client.send('/setlist/activeSectionName', secs[si], () => {});
+    client.send('/setlist/nextSectionName', secs[si + 1] ?? '', () => {});
   }
   client.send('/setlist/remainingTimeInSection', rem, () => {});
 }
@@ -42,7 +47,7 @@ function sendSongInfo() {
   client.send('/setlist/activePartName', parts[idx], () => {});
   client.send('/setlist/notesBeforeActiveSong', ...before, () => {});
   client.send('/setlist/notesAfterActiveSong', ...after, () => {});
-  client.send('/setlist/sections', ...sectionsOf(idx), () => {});
+  if (!noSections) client.send('/setlist/sections', ...sectionsOf(idx), () => {});
   sendSection(true);
 }
 // Projektname wie in Ableton: node test/fake-ableset.js --project "Mein Set"

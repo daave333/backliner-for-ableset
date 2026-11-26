@@ -72,34 +72,68 @@ function seconds(bpm, from, to) {
   return s;
 }
 
+// Songs/Abschnitte als MIDI-Clips auf einer Spur „Songs“ bzw. „Sections“ (AbleSet ab Live 11)
+function parseTrackCues(xml) {
+  const out = [];
+  const tr = /<(MidiTrack|AudioTrack) Id="\d+"[^>]*>([\s\S]*?)<\/\1>/g;
+  let m;
+  while ((m = tr.exec(xml))) {
+    const name = unXml((m[2].match(/<EffectiveName Value="([^"]*)"/) || [])[1] || '').trim();
+    const kind = /^songs?$/i.test(name) ? 'song' : /^sections?$/i.test(name) ? 'section' : null;
+    if (!kind) continue;
+    const arr = m[2].match(/<ArrangerAutomation>\s*<Events>([\s\S]*?)<\/Events>/);   // nur Arrangement, keine Session-Clips
+    if (!arr) continue;
+    for (const c of arr[1].split(/<\/(?:MidiClip|AudioClip)>/)) {
+      const t = c.match(/<(?:MidiClip|AudioClip) Id="\d+" Time="([^"]+)"/), n = c.match(/<Name Value="([^"]*)"/);
+      if (!t || !n) continue;
+      const end = c.match(/<CurrentEnd Value="([^"]+)"/);
+      out.push({ kind, time: parseFloat(t[1]), end: end ? parseFloat(end[1]) : null, name: unXml(n[1]) });
+    }
+  }
+  return out;
+}
+
 // → { songName: { sections: [{ name, t }], duration } } – t in Sekunden ab Songbeginn
 function analyze(file) {
   const xml = readXml(file);
-  const locs = parseLocators(xml), bpm = parseTempo(xml);
+  const bpm = parseTempo(xml);
+  // Alle Cues zusammen: Locators (Cue-Notation) und Clips auf den Spuren „Songs“/„Sections“
+  const cues = [];
+  for (const l of parseLocators(xml)) {
+    const raw = l.name.trim();
+    if (!raw || raw.startsWith('*') || raw.startsWith('[')) continue;            // Notizen, ClyphX
+    if (raw.startsWith('>')) { cues.push({ kind: 'section', time: l.time, name: cleanCue(raw.replace(/^>+/, '')) }); continue; }
+    const name = cleanCue(raw);
+    if (/^(STOP|AUTOSTOP|SONG END)$/i.test(name)) cues.push({ kind: 'end', time: l.time });
+    else if (name) cues.push({ kind: 'song', time: l.time, name });
+  }
+  for (const c of parseTrackCues(xml)) {
+    const name = cleanCue(c.name.replace(/^>+/, ''));
+    if (name) cues.push({ ...c, name });
+  }
+  // bei gleicher Position: erst Songende, dann Song, dann Abschnitt
+  const order = { end: 0, song: 1, section: 2 };
+  cues.sort((a, b) => a.time - b.time || order[a.kind] - order[b.kind]);
+
   const songs = {};
   let cur = null;
   const finish = endBeat => {
     if (!cur) return;
-    if (endBeat != null) cur.duration = seconds(bpm, cur.start, endBeat);
-    songs[cur.name] = { sections: cur.sections.map(x => ({ name: x.name, t: seconds(bpm, cur.start, x.beat) })), duration: cur.duration ?? null };
+    const e = endBeat ?? cur.end;
+    songs[cur.name] = {
+      sections: cur.sections.filter(x => e == null || x.beat < e).map(x => ({ name: x.name, t: seconds(bpm, cur.start, x.beat) })),
+      duration: e != null ? seconds(bpm, cur.start, e) : null
+    };
     cur = null;
   };
-  for (const l of locs) {
-    const raw = l.name.trim();
-    if (!raw || raw.startsWith('*') || raw.startsWith('[')) continue;            // Notizen, ClyphX
-    if (raw.startsWith('>')) {                                                    // Abschnitt
-      const name = cleanCue(raw.replace(/^>+/, ''));
-      if (cur && name) cur.sections.push({ name, beat: l.time });
-      continue;
-    }
-    const name = cleanCue(raw);
-    if (/^(STOP|AUTOSTOP|SONG END)$/i.test(name)) { finish(l.time); continue; }  // Songende
-    if (!name) continue;
-    finish(l.time);                                                               // nächster Song beendet den vorigen
-    cur = { name, start: l.time, sections: [] };
+  for (const c of cues) {
+    if (cur && cur.end != null && c.time >= cur.end) finish(cur.end);           // Song-Clip zu Ende
+    if (c.kind === 'end') { finish(c.time); continue; }
+    if (c.kind === 'song') { finish(c.time); cur = { name: c.name, start: c.time, end: c.end ?? null, sections: [] }; continue; }
+    if (cur && c.name) cur.sections.push({ name: c.name, beat: c.time });
   }
   finish(null);
   return songs;
 }
 
-module.exports = { analyze, cleanCue, parseLocators, parseTempo, seconds };
+module.exports = { analyze, cleanCue, parseLocators, parseTempo, parseTrackCues, seconds };
